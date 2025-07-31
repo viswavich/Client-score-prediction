@@ -7,6 +7,7 @@ from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from datetime import datetime
 import concurrent.futures
+from waitress import serve
 
 load_dotenv()
 app = Flask(__name__)
@@ -215,4 +216,4 @@ Note: The score must be an integer.
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    serve(app, host="0.0.0.0", port=5000)
