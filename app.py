@@ -145,34 +145,6 @@ def analyze_ticket():
             v["response_delay"] = calculate_response_delay(v.get("cnb_created_datetime", ""), response_content)
             valid_tickets.append(v)
 
-        # ---------------- OVERALL SCORE ----------------
-        sentiment_input = "\n\n".join([t["cnb_support_ticket_content"] for t in valid_tickets])
-        response_input = "\n\n".join([t["responded_content_with_datetime"] for t in valid_tickets])
-
-        overall_prompt = f"""
-Analyze the following client messages and support responses. Provide an overall score (0-10) based on:
-- Sentiment of client messages
-- Relationship tone
-- Quality of responses
-
-⚠️ The same input must always return the same score. Do not vary your scoring unless the ticket content changes.
-
-Client: {cnb_title}
-
-Client Messages:
-{sentiment_input}
-
-Support Responses:
-{response_input}
-
-Return format as JSON:
-{{ "overall_score": number }}
-Note: The score must be an integer.
-"""
-        overall_raw = call_openai(overall_prompt)
-        overall_clean = re.search(r'\{[\s\S]*?\}', overall_raw).group(0)
-        overall_data = json.loads(overall_clean)
-
         # ---------------- PARALLEL BATCHING ----------------
         batch_size = 50
         batches = [valid_tickets[i:i + batch_size] for i in range(0, len(valid_tickets), batch_size)]
@@ -201,13 +173,65 @@ Note: The score must be an integer.
                     else:
                         ticket_score_data.append(ticket_result)
 
+        # ---------------- OVERALL SCORE (BATCHED & SUMMARIZED) ----------------
+        BATCH_SIZE_OVERALL = 100  # You can adjust this as needed
+
+        # Split valid tickets into batches for overall score
+        overall_batches = [valid_tickets[i:i + BATCH_SIZE_OVERALL] for i in range(0, len(valid_tickets), BATCH_SIZE_OVERALL)]
+        overall_scores = []
+
+        for batch in overall_batches:
+            # Summarize each ticket as a single line (title + short content)
+            summarized_tickets = [
+                f"Title: {t['cnb_support_ticket_title']} | Message: {t['cnb_support_ticket_content'][:100]} | Response: {t['responded_content_with_datetime'][:100]}"
+                for t in batch
+            ]
+            summary_input = "\n".join(summarized_tickets)
+
+            overall_prompt = f"""
+Analyze the following summarized support tickets. Provide an overall score (0-10) for this batch based on:
+- Sentiment of client messages
+- Relationship tone
+- Quality of responses
+
+⚠️ The same input must always return the same score. Do not vary your scoring unless the ticket content changes.
+
+Client: {cnb_title}
+
+Tickets:
+{summary_input}
+
+Return format as JSON:
+{{ "overall_score": number }}
+Note: The score must be an integer.
+"""
+            overall_raw = call_openai(overall_prompt)
+            match = re.search(r'\{[\s\S]*?\}', overall_raw)
+            if not match:
+                # Optionally, log or print the problematic response for debugging
+                overall_scores.append(0)  # Or skip/continue if you prefer
+                continue
+            overall_clean = match.group(0)
+            try:
+                batch_score = json.loads(overall_clean)["overall_score"]
+                overall_scores.append(int(batch_score))
+            except Exception:
+                overall_scores.append(0)  # Or skip/continue if you prefer
+                continue
+
+        # Average the batch scores for the final overall score
+        if overall_scores:
+            final_overall_score = round(sum(overall_scores) / len(overall_scores))
+        else:
+            final_overall_score = 0
+
         return jsonify({
             "cnb_id": cnb_id,
             "client_name": cnb_title,
             "total_tickets": total_tickets,
             "book_training_tickets": book_training_count,
             "tickets_without_response": no_response_count,
-            "overall_score": overall_data["overall_score"],
+            "overall_score": final_overall_score,
             "ticket_details": ticket_score_data
         })
 
