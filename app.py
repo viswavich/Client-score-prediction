@@ -72,8 +72,8 @@ Evaluate each of the following support tickets. Score each from 0 to 10 based on
 📌 Priority Rules:
 - Urgent: 2 days
 - High: 3 days
-- Normal: 5 days
-- Low: 7 days
+- Normal: 4 days
+- Low: 5 days
 
 Penalize if delayed or no response. For each ticket, return:
 - ticket_number
